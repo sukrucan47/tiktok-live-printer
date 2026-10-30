@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TikTok LIVE Printer</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:18px;background:#101827;color:#f8fafc;font:16px Arial;max-width:760px;margin:auto}
+.card{background:#1e293b;border:1px solid #334155;border-radius:15px;padding:16px;margin:12px 0}
+h1{font-size:23px}input,button{width:100%;padding:13px;border-radius:10px;border:1px solid #475569;font-size:16px;margin-top:8px}
+input{background:#0f172a;color:white}button{background:#e11d48;color:white;font-weight:bold;border:0}
+button.alt{background:#334155}.status{color:#fbbf24;margin-top:10px;font-size:14px}
+.item{border-bottom:1px solid #475569;padding:12px 0}.muted{color:#94a3b8;font-size:13px}
+</style></head><body>
+<h1>🎁 TikTok LIVE Printer</h1><p class="muted">Hesap: <b id="who">—</b> · <span id="state">Bağlı değil</span></p>
+<section class="card"><b>Canlı yayına bağlan</b><input id="user" value="trvler.999" placeholder="TikTok kullanıcı adı"><button id="connect">Yayına bağlan</button><button class="alt" id="disconnect">Bağlantıyı kes</button><div class="status" id="msg">Sunucu bağlantısı bekleniyor.</div></section>
+<section class="card"><b>Canlı etkinlikler</b><p class="muted">Takip ve hediye olayları geldikçe burada görünür.</p><div id="events" class="muted">Henüz etkinlik yok.</div></section>
+<section class="card"><b>Yazdırma</b><p class="muted">Etkinliğe dokunup paylaşım menüsünden Easy Thermal Print'i seçerek yazdırabilirsiniz. Tam otomatik arka planda baskı için Android yardımcı uygulaması/intent entegrasyonu gerekir.</p><button class="alt" id="share">Son etkinliği Easy Thermal Print'e gönder</button></section>
+<script src="/socket.io/socket.io.js"></script><script>
+const socket=io();let last=null;
+socket.on("status",s=>{document.getElementById("state").textContent=s.live?"Yayında bağlantı var":"Bağlı değil";document.getElementById("who").textContent="@"+(s.username||"—")});
+socket.on("event",e=>{last=e;const box=document.getElementById("events");if(box.textContent==="Henüz etkinlik yok.")box.textContent="";const d=document.createElement("div");d.className="item";d.textContent=`${e.at} · ${e.type} · @${e.user} · ${e.detail} · x${e.count}`;d.onclick=()=>{last=e;document.getElementById("msg").textContent="Yazdırılacak etkinlik seçildi."};box.prepend(d)});
+document.getElementById("connect").onclick=async()=>{const username=document.getElementById("user").value.trim();document.getElementById("msg").textContent="Bağlanılıyor…";try{const r=await fetch("/api/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username})});const j=await r.json();document.getElementById("msg").textContent=j.message||j.error||"İşlem tamamlandı"}catch(e){document.getElementById("msg").textContent="Sunucuya ulaşılamadı: "+e.message}};
+document.getElementById("disconnect").onclick=()=>fetch("/api/disconnect",{method:"POST"});
+document.getElementById("share").onclick=async()=>{if(!last){alert("Henüz yazdırılacak etkinlik yok.");return}const text=`TIKTOK LIVE\n${last.type}\n@${last.user}\n${last.detail}\nAdet: ${last.count}\n${last.at}\nÖRNEKTİR\n`;if(navigator.share){try{await navigator.share({title:"TikTok LIVE fişi",text})}catch{}}else{await navigator.clipboard.writeText(text);alert("Fiş metni kopyalandı.")}};
+</script></body></html>
