@@ -2,53 +2,177 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TikTok LIVE Printer</title>
 <style>
-body{background:#101827;color:white;font-family:Arial;padding:18px}
-.card{background:#1e293b;padding:18px;border-radius:15px;margin:15px 0}
-input,button{width:100%;padding:14px;margin-top:10px;border:0;border-radius:10px;font-size:16px}
+body{background:#101827;color:white;font-family:Arial;padding:16px}
+.card{background:#1e293b;padding:17px;border-radius:14px;margin:14px 0}
+input,button{width:100%;box-sizing:border-box;padding:14px;margin-top:10px;border:0;border-radius:9px;font-size:16px}
 input{background:#0f172a;color:white}
 button{background:#e11d48;color:white;font-weight:bold}
-.event{padding:12px;border-bottom:1px solid #555}
+.secondary{background:#334155}
+.event{padding:12px;border-bottom:1px solid #475569}
 </style>
 </head>
 <body>
+
 <h2>🎁 TikTok LIVE Printer</h2>
-<p>Hesap: @trvler.999</p>
+
 <div class="card">
-<h3>Canlı yayına bağlan</h3>
-<input id="user" value="trvler.999">
-<button onclick="connectLive()">Yayına bağlan</button>
-<p id="status">Bağlantı bekleniyor</p>
+<h3>🖨️ PT210 Yazıcı</h3>
+<p id="printerStatus">Yazıcı kontrol edilmedi.</p>
+<button onclick="checkPrinter()">Yazıcıyı kontrol et</button>
+<button class="secondary" onclick="testPrint()">Test fişi yazdır</button>
 </div>
+
+<div class="card">
+<h3>📡 TikTok LIVE</h3>
+<input id="user" value="yakisikli_corapci">
+<button onclick="connectLive()">Yayına bağlan</button>
+<p id="status">Bağlantı bekleniyor.</p>
+</div>
+
 <div class="card">
 <h3>Canlı etkinlikler</h3>
 <div id="events">Henüz etkinlik yok.</div>
 </div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const socket=io();
-socket.on("status",s=>{
- document.getElementById("status").textContent=s.live?"Yayına bağlandı":"Bağlı değil";
-});
-socket.on("event",e=>{
- const d=document.createElement("div");
- d.className="event";
- d.textContent=e.type+" | "+e.user+" | "+e.detail+" | x"+e.count;
- document.getElementById("events").prepend(d);
-});
-async function connectLive(){
- const username=document.getElementById("user").value;
- document.getElementById("status").textContent="Bağlanılıyor...";
- const r=await fetch("/api/connect",{
- method:"POST",
- headers:{"Content-Type":"application/json"},
- body:JSON.stringify({username})
- });
- const data=await r.json();
- document.getElementById("status").textContent=data.message||data.error;
+const socket = io();
+const BRIDGE = "http://localhost:9100";
+let printerReady = false;
+let printing = false;
+const seen = new Map();
+
+async function checkPrinter(){
+ const status = document.getElementById("printerStatus");
+ status.textContent = "PT210 kontrol ediliyor...";
+
+ try{
+  const r = await fetch(BRIDGE + "/health");
+  const d = await r.json();
+
+  printerReady = r.ok && d.printer?.connected === true;
+
+  status.textContent = printerReady
+   ? "Bağlı: " + (d.printer.name || "PT210")
+   : "Yazıcı bağlı değil. Cleanter'da PT210'u seç.";
+
+ }catch(e){
+  printerReady = false;
+  status.textContent =
+   "Cleanter bulunamadı. Uygulamayı açıp sunucusunu başlat.";
+ }
 }
+
+async function printReceipt(lines, reference){
+ if(printing) return;
+
+ printing = true;
+
+ try{
+  const content = [
+   {type:"text",text:"TIKTOK LIVE",align:"center",bold:true,size:"large"},
+   {type:"divider"},
+   ...lines.map(t=>({type:"text",text:String(t),align:"center"})),
+   {type:"feed",lines:3}
+  ];
+
+  const r = await fetch(BRIDGE + "/print",{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({
+    content,
+    paperWidth:58,
+    cut:true,
+    reference
+   })
+  });
+
+  const d = await r.json();
+
+  if(!r.ok) throw new Error(d.fix || d.detail || d.error);
+
+  return true;
+
+ }finally{
+  printing = false;
+ }
+}
+
+async function testPrint(){
+ try{
+  await printReceipt([
+   "YAZICI TESTI",
+   "PT210",
+   new Date().toLocaleTimeString("tr-TR")
+  ],"test-fisi");
+
+  document.getElementById("printerStatus").textContent =
+   "Test fişi gönderildi.";
+
+ }catch(e){
+  document.getElementById("printerStatus").textContent =
+   "Hata: " + e.message;
+ }
+}
+
+async function connectLive(){
+ const username = document.getElementById("user").value.trim();
+ const status = document.getElementById("status");
+
+ status.textContent = "Bağlanılıyor...";
+
+ try{
+  const r = await fetch("/api/connect",{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({username})
+  });
+
+  const d = await r.json();
+  status.textContent = d.message || d.error;
+
+ }catch(e){
+  status.textContent = "Bağlantı hatası: " + e.message;
+ }
+}
+
+socket.on("status",s=>{
+ document.getElementById("status").textContent =
+  s.live ? "Yayına bağlandı." : "Bağlı değil.";
+});
+
+socket.on("event",async e=>{
+ const key = e.type + "|" + e.user + "|" + e.detail;
+ const now = Date.now();
+
+ if(seen.has(key) && now-seen.get(key)<10000) return;
+ seen.set(key,now);
+
+ const item = document.createElement("div");
+ item.className = "event";
+ item.textContent =
+  e.type+" | "+e.user+" | "+e.detail+" | x"+e.count;
+
+ document.getElementById("events").prepend(item);
+
+ if(e.type === "Takip"){
+  try{
+   await printReceipt([
+    "YENI TAKIPCI",
+    e.user,
+    new Date().toLocaleTimeString("tr-TR")
+   ],"takipci-"+e.user);
+  }catch(err){
+   document.getElementById("printerStatus").textContent =
+    "Otomatik yazdırma hatası: "+err.message;
+  }
+ }
+});
+
+checkPrinter();
 </script>
 </body>
 </html>
